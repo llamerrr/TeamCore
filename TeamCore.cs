@@ -17,12 +17,8 @@ namespace TeamCore
 
         public override void PostUpdateEverything()
         {
-            // We only care about checking this logic on the Server (for MP) or SinglePlayer
-            // Clients just receive the result (disconnection or world exit)
-            if (Main.netMode == NetmodeID.MultiplayerClient)
-                return;
 
-            // Filter for actual active players (ignore empty slots)
+            // Filter for actual active players
             int activePlayerCount = 0;
             int deadPlayerCount = 0;
 
@@ -32,7 +28,6 @@ namespace TeamCore
                 if (p.active)
                 {
                     activePlayerCount++;
-                    // A player is considered "dead" for this mechanic if they are dead or a ghost
                     if (p.dead || p.ghost)
                     {
                         deadPlayerCount++;
@@ -40,56 +35,80 @@ namespace TeamCore
                 }
             }
 
-            // If there are players and ALL of them are dead
-            if (activePlayerCount > 0 && activePlayerCount == deadPlayerCount)
+            // Check for Game Over condition
+            // Only trigger if not already triggered (Latching logic)
+            if (!gameOverTriggered)
             {
-                if (!gameOverTriggered)
-                {
-                    gameOverTriggered = true;
-                    TriggerGameOver();
-                }
+                 // If there are players and ALL of them are dead
+                 if (activePlayerCount > 0 && activePlayerCount == deadPlayerCount)
+                 {
+                     gameOverTriggered = true;
+                     TriggerGameOverMessage();
+                 }
             }
-            else
+            
+            // Once Game Over is triggered, we continually enforce the state
+            if (gameOverTriggered)
             {
-                // Reset flag if someone respawns (though usually Game Over stops this)
-                // In a true hardcore, the game would end, but for safety/loops:
-                if (activePlayerCount > deadPlayerCount)
-                    gameOverTriggered = false;
+                EnforceHardcoreDeath();
             }
         }
 
-        private void TriggerGameOver()
+        private void TriggerGameOverMessage()
         {
-            string message = "===========================================";
-            string message1 = "Everyone has died! Team Hardcore Game Over.";
-            string message2 = "===========================================";
-
+            string message = "Everyone has died! Team Hardcore Game Over.";
+			string message1 = "===========================================";
             if (Main.netMode == NetmodeID.SinglePlayer)
             {
-                Main.NewText(message, Color.Red);
-                Main.NewText(message1, Color.Red);
-                Main.NewText(message2, Color.Red);
+				Main.NewText(message1, Color.Red);
+				Main.NewText(message, Color.Red);
             }
             else if (Main.netMode == NetmodeID.Server)
             {
+
+				System.Console.WriteLine(message1);
+                Terraria.Chat.ChatHelper.BroadcastChatMessage(NetworkText.FromLiteral(message1), Color.Red);
+
                 System.Console.WriteLine(message);
                 Terraria.Chat.ChatHelper.BroadcastChatMessage(NetworkText.FromLiteral(message), Color.Red);
+
+				System.Console.WriteLine(message1);
+                Terraria.Chat.ChatHelper.BroadcastChatMessage(NetworkText.FromLiteral(message1), Color.Red);
+            }
+        }
+
+        private void EnforceHardcoreDeath()
+        {
+            // On Client, we mostly care about enforcing our own local player State
+            if (Main.netMode == NetmodeID.MultiplayerClient)
+            {
+                Player p = Main.LocalPlayer;
+                if (p.active)
+                {
+                    p.difficulty = 2; 
+                    p.ghost = true;
+                    p.dead = true;
+                    p.respawnTimer = 3600; 
+                }
+                return; // Client doesn't need to iterate others or sync
             }
 
-            // Apply Hardcore Ghost state to all active players
-            for (int i = 0; i < Main.maxPlayers; i++)
+            // Server Logic
+             for (int i = 0; i < Main.maxPlayers; i++)
             {
                 Player p = Main.player[i];
                 if (p.active)
                 {
                     // Force Hardcore difficulty (2)
-                    p.difficulty = 2; // 0 = Softcore, 1 = Mediumcore, 2 = Hardcore, 3 = Journey
+                    p.difficulty = 2; 
                     p.ghost = true;
                     p.dead = true;
+                    // Keep respawn timer high (wait time) prevents respawn
+                    p.respawnTimer = 3600; 
 
-                    if (Main.netMode == NetmodeID.Server)
+                    // Periodically sync to ensure clients stay in ghost mode
+                    if (Main.netMode == NetmodeID.Server && Main.time % 60 == 0)
                     {
-                        // Sync player data (includes difficulty and ghost state)
                         NetMessage.SendData(MessageID.SyncPlayer, -1, -1, null, i);
                     }
                 }
