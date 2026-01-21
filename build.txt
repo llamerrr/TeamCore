@@ -1,3 +1,0 @@
-displayName = TeamCore
-author = llamerrr
-version = 0.2
