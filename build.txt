@@ -1,0 +1,4 @@
+displayName = TeamCore
+description = yeah
+author = llamerrr
+version = 0.2
