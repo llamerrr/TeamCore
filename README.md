@@ -1,0 +1,2 @@
+# TeamCore
+Terraria team hardcore
